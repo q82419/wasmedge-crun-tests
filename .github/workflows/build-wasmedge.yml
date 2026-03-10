@@ -1,0 +1,60 @@
+name: Build and Run WasmEdge
+
+defaults:
+  run:
+    shell: bash -leo pipefail {0}
+
+on:
+  push:
+    branches: master
+  pull_request:
+    branches: master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: WasmEdge ${{ matrix.wasmedge_version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wasmedge_version:
+          - '0.15.0'
+          - '0.16.0'
+          - '0.16.1'
+          - 'master'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy pre-built hello.wasm into test context
+        run: |
+          cp hello.wasm tests/wasmedge-build/hello_wasm/
+
+      - name: Build test image
+        env:
+          WASMEDGE_VERSION: ${{ matrix.wasmedge_version }}
+        run: |
+          sudo docker build \
+            --build-arg WASMEDGE_VERSION="$WASMEDGE_VERSION" \
+            -t wasmedge-test \
+            tests/wasmedge-build
+
+      - name: Clone crun
+        run: |
+          git clone --depth 1 https://github.com/containers/crun.git
+
+      - name: Run tests
+        run: |
+          sudo docker run \
+            --privileged \
+            --cgroupns=host \
+            --rm \
+            -v containers:/var/lib/containers:rw \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw,rslave \
+            -w /crun \
+            -v ${PWD}/crun:/crun \
+            wasmedge-test
